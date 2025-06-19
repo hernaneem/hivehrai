@@ -1,0 +1,39 @@
+name: Deploy Hive HR AI Website
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'sitio web/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'sitio web/**'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies for static site
+        run: |
+          npm install -g http-server
+      
+      # Aquí puedes agregar pasos para procesar/optimizar el sitio web si es necesario
+      # Por ejemplo, minificar CSS/JS, optimizar imágenes, etc.
+      
+      - name: Deploy to GitHub Pages
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: 'sitio web'
+          branch: gh-pages
+          token: ${{ secrets.GITHUB_TOKEN }}
