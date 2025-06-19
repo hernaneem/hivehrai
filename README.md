@@ -8,25 +8,24 @@ El proyecto está organizado de la siguiente manera:
 
 ```
 /
-├── sitio web/                # Sitio web principal de Hive HR AI
-│   ├── images/               # Imágenes y recursos gráficos
-│   ├── index.html            # Página de inicio
-│   ├── styles.css            # Estilos globales
-│   ├── script.js             # JavaScript global
-│   ├── agent-pages.css       # Estilos para páginas de agentes
-│   ├── agent-script.js       # JavaScript para páginas de agentes
-│   ├── recruit.html          # Página del agente RecruitBot
-│   ├── payroll.html          # Página del agente PayrollPro
-│   ├── legal.html            # Página del agente LegalMind
-│   ├── hrflow.html           # Página del agente HRFlow
-│   └── mindwell.html         # Página del agente MindWell
+├── images/                  # Imágenes y recursos gráficos
+├── index.html               # Página de inicio
+├── styles.css               # Estilos globales
+├── script.js                # JavaScript global
+├── agent-pages.css          # Estilos para páginas de agentes
+├── agent-script.js          # JavaScript para páginas de agentes
+├── recruit.html             # Página del agente RecruitBot
+├── payroll.html             # Página del agente PayrollPro
+├── legal.html               # Página del agente LegalMind
+├── hrflow.html              # Página del agente HRFlow
+├── mindwell.html            # Página del agente MindWell
 │
-└── RecruitAgent/             # Aplicación de RecruitBot
-    └── recruitment-ai/       # Aplicación React/TypeScript para RecruitBot
-        ├── src/              # Código fuente de la aplicación
-        ├── public/           # Archivos públicos
-        ├── package.json      # Dependencias y scripts
-        └── ...               # Otros archivos de configuración
+└── RecruitAgent/            # Aplicación de RecruitBot
+    └── recruitment-ai/      # Aplicación React/TypeScript para RecruitBot
+        ├── src/             # Código fuente de la aplicación
+        ├── public/          # Archivos públicos
+        ├── package.json     # Dependencias y scripts
+        └── ...              # Otros archivos de configuración
 ```
 
 ## Sitio Web Principal
@@ -63,7 +62,7 @@ La página `recruit.html` del sitio web principal incluye enlaces a la aplicaci�
 Para ejecutar el sitio web principal localmente:
 
 ```bash
-cd "sitio web"
+# Desde el directorio raíz del proyecto
 python -m http.server 8000
 ```
 
