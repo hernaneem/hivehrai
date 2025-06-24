@@ -19,6 +19,8 @@ import RavenTestPage from './components/RavenTestPage'
 import RavenTestInterface from './components/RavenTestInterface'
 import RavenTestFinishPage from './components/RavenTestFinishPage'
 import RavenTestCompleted from './components/RavenTestCompleted'
+import ZavicTestPage from './components/ZavicTestPage'
+import ZavicTestCompleted from './components/ZavicTestCompleted'
 import { RavenProvider } from './contexts/RavenContext'
 
 function App() {
@@ -56,6 +58,11 @@ function App() {
               <Route path="/terman-test/:token" element={<TermanTestPage />} />
               <Route path="/terman-test/:token/start" element={<TermanTestInterface />} />
               <Route path="/terman-test/:token/completed" element={<TermanTestCompleted />} />
+              
+              /* Rutas públicas para tests Zavic */
+              <Route path="/zavic-test/:token" element={<ZavicTestPage />} />
+              <Route path="/zavic-test/:token/start" element={<ZavicTestPage />} />
+              <Route path="/zavic-test/:token/completed" element={<ZavicTestCompleted />} />
               
               /* Rutas públicas para tests Raven */
               <Route path="/raven-test/:token" element={<RavenTestPage />} />
