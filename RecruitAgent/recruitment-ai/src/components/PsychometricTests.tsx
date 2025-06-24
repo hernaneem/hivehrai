@@ -267,6 +267,63 @@ const zavicTest = zavicTestsData?.find(t => t.candidate_id === candidate.id);
     return '';
   };
 
+  // ----------------------- ZAVIC -----------------------
+
+  const createZavicTest = async (candidateId: string, jobId: string) => {
+    if (!user?.id) throw new Error('Usuario no autenticado');
+    try {
+      const token = btoa(`zavic_${candidateId}_${Date.now()}_${Math.random()}`);
+      const { data: testData, error: testError } = await supabase
+        .from('zavic_tests')
+        .insert({
+          candidate_id: candidateId,
+          job_id: jobId,
+          recruiter_id: user.id,
+          test_token: token,
+          status: 'not-started',
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 días
+          invitation_email_sent: false,
+        })
+        .select()
+        .single();
+      if (testError) throw testError;
+      await loadCandidates();
+      return testData;
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const sendZavicInvitation = async (candidateId: string) => {
+    try {
+      const candidate = candidates.find(c => c.id === candidateId);
+      if (!candidate?.job_id) {
+        alert('Error: No se puede enviar invitación, falta información del trabajo');
+        return;
+      }
+      const createdTest = await createZavicTest(candidateId, candidate.job_id);
+      const updatedCandidate = {
+        ...candidate,
+        zavic_status: 'not-started' as const,
+        zavic_invitation_sent: true,
+        zavic_test_id: createdTest.id,
+        zavic_test_token: createdTest.test_token,
+      } as Candidate;
+      setCandidates(prev => prev.map(c => c.id === candidateId ? updatedCandidate : c));
+      alert('✅ Test Zavic creado. Usa "Copiar Zavic" para compartir.');
+    } catch (error) {
+      alert(`Error enviando invitación Zavic: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+    }
+  };
+
+  const generateZavicLink = (candidateId: string) => {
+    const candidate = candidates.find(c => c.id === candidateId);
+    if (candidate?.zavic_test_token) {
+      return `${window.location.origin}/zavic-test/${candidate.zavic_test_token}`;
+    }
+    return '';
+  };
+
   const createRavenTest = async (candidateId: string, jobId: string) => {
     if (!user?.id) throw new Error('Usuario no autenticado');
     try {
@@ -485,6 +542,9 @@ const zavicTest = zavicTestsData?.find(t => t.candidate_id === candidate.id);
                 <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
                   Test Terman
                 </th>
+                <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
+                  Test Zavic
+                </th>
 
                 <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
                   Acciones
@@ -509,9 +569,46 @@ const zavicTest = zavicTestsData?.find(t => t.candidate_id === candidate.id);
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getStatusBadge(candidate.terman_status)}
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {getStatusBadge(candidate.zavic_status)}
+                  </td>
 
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex space-x-3">
+                      {/* --- Zavic buttons --- */}
+
+                      {(candidate.cv_status === 'approved' || candidate.cv_status === 'reviewing') && !candidate.zavic_test_token && (
+                        <button
+                          onClick={() => sendZavicInvitation(candidate.id)}
+                          className="text-blue-400 hover:text-blue-300 flex items-center space-x-1 transition-colors"
+                        >
+                          <Send className="h-4 w-4" />
+                          <span>Crear Zavic</span>
+                        </button>
+                      )}
+
+                      {(candidate.zavic_test_token && candidate.zavic_status !== 'completed') && (
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(generateZavicLink(candidate.id));
+                            alert('📋 Enlace Zavic copiado');
+                          }}
+                          className="text-purple-400 hover:text-purple-300 flex items-center space-x-1 transition-colors"
+                        >
+                          <Copy className="h-4 w-4" />
+                          <span>Copiar Zavic</span>
+                        </button>
+                      )}
+
+                      {candidate.zavic_status === 'pending' && (
+                        <span className="text-yellow-400 flex items-center space-x-1">
+                          <AlertCircle className="h-4 w-4" />
+                          <span>Zavic pendiente</span>
+                        </span>
+                      )}
+
+                      {/* end buttons */}
+
                       {(candidate.cv_status === 'approved' || candidate.cv_status === 'reviewing') && !candidate.test_token && (
                         <button
                           onClick={() => sendTermanInvitation(candidate.id)}

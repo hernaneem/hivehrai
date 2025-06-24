@@ -218,7 +218,13 @@ const questions: Question[] = [
   }
 ];
 
-export default function ZavicTest() {
+interface ZavicTestProps {
+  candidateId?: string;
+  testToken?: string;
+  onComplete?: (resultId: number) => void;
+}
+
+export default function ZavicTest({ candidateId, testToken, onComplete }: ZavicTestProps) {
   const { user } = useAuth();
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<{ [key: number]: Answer }>({});
@@ -309,6 +315,10 @@ export default function ZavicTest() {
 
       console.log('Resultados guardados:', data);
       setSavedSuccessfully(true);
+
+    if (onComplete && data?.id) {
+      onComplete(data.id);
+    }
     } catch (err) {
       console.error('Error al guardar resultados:', err);
       setError('Error al guardar los resultados');
