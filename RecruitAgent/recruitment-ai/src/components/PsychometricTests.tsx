@@ -34,6 +34,11 @@ interface Candidate {
   raven_invitation_sent: boolean;
   raven_test_id?: string;
   raven_test_token?: string;
+  /* Zavic */
+  zavic_status: 'not-started' | 'pending' | 'in-progress' | 'completed' | 'expired';
+  zavic_invitation_sent: boolean;
+  zavic_test_id?: string;
+  zavic_test_token?: string;
 }
 
 // Lightweight shape for results fetched from terman_results table
@@ -123,11 +128,20 @@ const PsychometricTests: React.FC = () => {
         .eq('recruiter_id', user.id);
       if (ravenError) throw ravenError;
 
+      // Tests Zavic
+      const { data: zavicTestsData, error: zavicError } = await supabase
+        .from('zavic_tests')
+        .select('*')
+        .in('candidate_id', candidateIds)
+        .eq('recruiter_id', user.id);
+      if (zavicError) throw zavicError;
+
       // Combinar datos
       const candidatesWithTests = candidatesData?.map(candidate => {
         const analysis = candidate.candidate_analyses?.[0];
         const termanTest = termanTestsData?.find(t => t.candidate_id === candidate.id);
         const ravenTest = ravenTestsData?.find(t => t.candidate_id === candidate.id);
+const zavicTest = zavicTestsData?.find(t => t.candidate_id === candidate.id);
 
         return {
           id: candidate.id,
@@ -150,7 +164,12 @@ const PsychometricTests: React.FC = () => {
           raven_status: ravenTest?.status || 'not-started',
           raven_invitation_sent: !!ravenTest?.invitation_sent_at,
           raven_test_id: ravenTest?.id,
-          raven_test_token: ravenTest?.test_token
+          raven_test_token: ravenTest?.test_token,
+          /* Zavic */
+          zavic_status: zavicTest?.status || 'not-started',
+          zavic_invitation_sent: !!zavicTest?.invitation_sent_at,
+          zavic_test_id: zavicTest?.id,
+          zavic_test_token: zavicTest?.test_token
         };
       }) || [];
 
