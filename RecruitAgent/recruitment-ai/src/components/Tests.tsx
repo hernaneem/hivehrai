@@ -60,6 +60,110 @@ const Tests = () => {
   // Estados y lógica de trabajos delegados al hook useJobs
   const { jobs, selectedJobId, setSelectedJobId, jobsLoading } = useJobs();
 
+  // State for Terman and Raven candidates (for statistics)
+  const [termanCandidates, setTermanCandidates] = useState<any[]>([]);
+  const [ravenCandidates, setRavenCandidates] = useState<any[]>([]);
+  const [termanRavenLoading, setTermanRavenLoading] = useState(false);
+
+  // Load Terman and Raven candidates data for statistics
+  const loadTermanRavenCandidates = async () => {
+    if (!user?.id) return;
+    
+    try {
+      setTermanRavenLoading(true);
+      
+      // Get candidates with approved analyses
+      const { data: candidatesData, error: candidatesError } = await supabase
+        .from('candidates')
+        .select(`
+          id,
+          name,
+          email,
+          phone,
+          years_experience,
+          created_at,
+          candidate_analyses!inner (
+            id,
+            job_id,
+            recommendation,
+            processed_at,
+            jobs!inner (
+              id,
+              title,
+              company,
+              recruiter_id
+            )
+          )
+        `)
+        .eq('candidate_analyses.jobs.recruiter_id', user.id)
+        .in('candidate_analyses.recommendation', ['yes', 'maybe']);
+
+      if (candidatesError) throw candidatesError;
+
+      const candidateIds = candidatesData?.map(c => c.id) || [];
+
+      // Get Terman tests
+      const { data: termanTests, error: termanError } = await supabase
+        .from('terman_tests')
+        .select('*')
+        .in('candidate_id', candidateIds)
+        .eq('recruiter_id', user.id);
+      if (termanError) throw termanError;
+
+      // Get Raven tests
+      const { data: ravenTests, error: ravenError } = await supabase
+        .from('raven_tests')
+        .select('*')
+        .in('candidate_id', candidateIds)
+        .eq('recruiter_id', user.id);
+      if (ravenError) throw ravenError;
+
+      // Process Terman candidates
+      const termanCandidatesData = candidatesData?.map(candidate => {
+        const analysis = candidate.candidate_analyses?.[0];
+        const test = termanTests?.find(t => t.candidate_id === candidate.id);
+        const jobInfo = analysis?.jobs?.[0]; // jobs es un array, tomar el primer elemento
+        return {
+          id: candidate.id,
+          name: candidate.name,
+          email: candidate.email,
+          position: jobInfo?.title || 'Sin especificar',
+          cv_status: analysis?.recommendation === 'yes' ? 'approved' : 'reviewing',
+          terman_status: test?.status || 'not-started'
+        };
+      }) || [];
+
+      // Process Raven candidates
+      const ravenCandidatesData = candidatesData?.map(candidate => {
+        const analysis = candidate.candidate_analyses?.[0];
+        const test = ravenTests?.find(t => t.candidate_id === candidate.id);
+        const jobInfo = analysis?.jobs?.[0]; // jobs es un array, tomar el primer elemento
+        return {
+          id: candidate.id,
+          name: candidate.name,
+          email: candidate.email,
+          position: jobInfo?.title || 'Sin especificar',
+          cv_status: analysis?.recommendation === 'yes' ? 'approved' : 'reviewing',
+          raven_status: test?.status || 'not-started'
+        };
+      }) || [];
+
+      setTermanCandidates(termanCandidatesData);
+      setRavenCandidates(ravenCandidatesData);
+    } catch (error) {
+      console.error('Error loading Terman/Raven candidates:', error);
+    } finally {
+      setTermanRavenLoading(false);
+    }
+  };
+
+  // Load data when user changes or active tab is terman/raven
+  useEffect(() => {
+    if (user?.id && (activeTab === 'terman' || activeTab === 'raven')) {
+      loadTermanRavenCandidates();
+    }
+  }, [user?.id, activeTab]);
+
   const getStatusBadge = (status: string) => {
     const badges = {
       'pending': { color: 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30', text: 'Pendiente' },
@@ -468,18 +572,31 @@ const Tests = () => {
     }
   };
 
+  // Calculate stats based on actual candidate data
+  const calculateStats = (candidates: any[], statusField: string) => {
+    return {
+      totalCandidates: candidates.length,
+      cvsApproved: candidates.filter(c => c.cv_status === 'approved').length,
+      testsCompleted: candidates.filter(c => c[statusField] === 'completed').length,
+      testsPending: candidates.filter(c => 
+        c[statusField] === 'pending' || 
+        c[statusField] === 'in-progress' || 
+        c[statusField] === 'not-started'
+      ).length,
+      testsInProgress: candidates.filter(c => c[statusField] === 'in-progress').length
+    };
+  };
+
   const currentStats = activeTab === 'cleaver'
-    ? cleaverStats
+    ? calculateStats(cleaverCandidates, 'cleaver_status')
     : activeTab === 'moss'
-    ? mossStats
+    ? calculateStats(mossCandidates, 'moss_status')
     : activeTab === 'zavic'
-    ? {
-        totalCandidates: zavicCandidates.length,
-        cvsApproved: zavicCandidates.filter(c => c.cv_status === 'approved' || c.cv_status === 'reviewing').length,
-        testsCompleted: zavicCandidates.filter(c => c.zavic_status === 'completed').length,
-        testsPending: zavicCandidates.filter(c => c.zavic_status === 'pending').length,
-        testsInProgress: zavicCandidates.filter(c => c.zavic_status === 'in-progress').length
-      }
+    ? calculateStats(zavicCandidates, 'zavic_status')
+    : activeTab === 'terman'
+    ? calculateStats(termanCandidates, 'terman_status')
+    : activeTab === 'raven'
+    ? calculateStats(ravenCandidates, 'raven_status')
     : {
         totalCandidates: 0,
         cvsApproved: 0,
@@ -487,8 +604,23 @@ const Tests = () => {
         testsPending: 0,
         testsInProgress: 0
       };
-  const currentLoading = activeTab === 'cleaver' ? cleaverLoading : activeTab === 'moss' ? mossLoading : zavicLoading;
-  const currentError = activeTab === 'cleaver' ? cleaverError : activeTab === 'moss' ? mossError : zavicError;
+  const currentLoading = activeTab === 'cleaver' 
+    ? cleaverLoading 
+    : activeTab === 'moss' 
+    ? mossLoading 
+    : activeTab === 'zavic'
+    ? zavicLoading
+    : (activeTab === 'terman' || activeTab === 'raven')
+    ? termanRavenLoading
+    : false;
+  
+  const currentError = activeTab === 'cleaver' 
+    ? cleaverError 
+    : activeTab === 'moss' 
+    ? mossError 
+    : activeTab === 'zavic'
+    ? zavicError
+    : ''; // No error state for Terman/Raven yet
 
   if (currentLoading) {
     return (
@@ -604,7 +736,7 @@ const Tests = () => {
       />
 
       {/* Estadísticas */}
-      {(activeTab === 'cleaver' || activeTab === 'moss' || activeTab === 'zavic') && (
+      {(activeTab === 'cleaver' || activeTab === 'moss' || activeTab === 'zavic' || activeTab === 'terman' || activeTab === 'raven') && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
             <div className="flex items-center justify-between">
@@ -651,10 +783,10 @@ const Tests = () => {
       {/* Renderizar contenido según pestaña activa */}
       {activeTab === 'terman' ? (
         // Componente de Tests Psicométricos Terman-Merrill
-        <PsychometricTests />
+        <PsychometricTests selectedJobId={selectedJobId} />
       ) : activeTab === 'raven' ? (
         // Componente de Raven Progressive Matrices
-        <RavenTests />
+        <RavenTests selectedJobId={selectedJobId} />
       ) : (
         <>
           {/* Filtros */}

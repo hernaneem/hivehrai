@@ -218,13 +218,15 @@ export const CleaverProvider: React.FC<CleaverProviderProps> = ({ children }) =>
         const analysis = candidate.candidate_analyses?.[0];
         const test = testsData?.find(t => t.candidate_id === candidate.id);
 
+        const jobInfo = analysis?.jobs?.[0]; // jobs es un array, tomar el primer elemento
+        
         return {
           id: candidate.id,
           name: candidate.name,
           email: candidate.email,
           phone: candidate.phone,
-          position: analysis?.jobs?.[0]?.title || 'Sin especificar',
-          job_title: analysis?.jobs?.[0]?.title,
+          position: jobInfo?.title || 'Sin especificar',
+          job_title: jobInfo?.title,
           job_id: analysis?.job_id,
           cv_status: analysis?.recommendation === 'yes' ? 'approved' as const : 'reviewing' as const,
           cv_review_date: analysis?.processed_at,
@@ -556,7 +558,11 @@ export const CleaverProvider: React.FC<CleaverProviderProps> = ({ children }) =>
       const totalCandidates = candidates.length;
       const cvsApproved = candidates.filter(c => c.cv_status === 'approved').length;
       const testsCompleted = candidates.filter(c => c.cleaver_status === 'completed').length;
-      const testsPending = candidates.filter(c => c.cleaver_status === 'pending').length;
+      const testsPending = candidates.filter(c => 
+        c.cleaver_status === 'pending' || 
+        c.cleaver_status === 'in-progress' || 
+        c.cleaver_status === 'not-started'
+      ).length;
       const testsInProgress = candidates.filter(c => c.cleaver_status === 'in-progress').length;
 
       setStats({
@@ -671,6 +677,11 @@ export const CleaverProvider: React.FC<CleaverProviderProps> = ({ children }) =>
       loadTests();
     }
   }, [user]);
+
+  // Actualizar estadísticas cuando cambien los candidatos
+  useEffect(() => {
+    refreshStats();
+  }, [candidates]);
 
   const value: CleaverContextType = {
     candidates,

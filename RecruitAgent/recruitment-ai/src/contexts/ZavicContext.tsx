@@ -163,14 +163,15 @@ export const ZavicProvider: React.FC<ProviderProps> = ({ children }) => {
       const enriched = (candidatesData || []).map((cand): CandidateWithZavicInfo => {
         const analysis = cand.candidate_analyses?.[0];
         const test = testsData?.find((t) => t.candidate_id === cand.id);
+        const jobInfo = analysis?.jobs?.[0]; // jobs es un array, tomar el primer elemento
         
         return {
           id: cand.id,
           name: cand.name,
           email: cand.email,
           phone: cand.phone,
-          position: analysis?.jobs?.[0]?.title || 'Sin especificar',
-          job_title: analysis?.jobs?.[0]?.title,
+          position: jobInfo?.title || 'Sin especificar',
+          job_title: jobInfo?.title,
           job_id: analysis?.job_id,
           cv_status: analysis?.recommendation === 'yes' ? 'approved' as const : 'reviewing' as const,
           cv_review_date: analysis?.processed_at,
@@ -207,18 +208,14 @@ export const ZavicProvider: React.FC<ProviderProps> = ({ children }) => {
   const refreshStats = async () => {
     const newStats: ZavicStats = {
       totalCandidates: candidates.length,
-      cvsApproved: candidates.filter(c => 
-        c.cv_status === 'approved' || c.cv_status === 'reviewing'
-      ).length,
-      testsCompleted: candidates.filter(c => 
-        c.zavic_status === 'completed'
-      ).length,
+      cvsApproved: candidates.filter(c => c.cv_status === 'approved').length,
+      testsCompleted: candidates.filter(c => c.zavic_status === 'completed').length,
       testsPending: candidates.filter(c => 
-        c.zavic_status === 'pending' || c.zavic_status === 'not-started'
+        c.zavic_status === 'pending' || 
+        c.zavic_status === 'in-progress' || 
+        c.zavic_status === 'not-started'
       ).length,
-      testsInProgress: candidates.filter(c => 
-        c.zavic_status === 'in-progress'
-      ).length
+      testsInProgress: candidates.filter(c => c.zavic_status === 'in-progress').length
     };
     setStats(newStats);
   };
@@ -301,6 +298,11 @@ export const ZavicProvider: React.FC<ProviderProps> = ({ children }) => {
       loadCandidates();
     }
   }, [user?.id]);
+
+  // Actualizar estadísticas cuando cambien los candidatos
+  useEffect(() => {
+    refreshStats();
+  }, [candidates]);
 
   const value: ZavicContextType = {
     candidates,

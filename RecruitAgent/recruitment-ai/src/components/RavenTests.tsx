@@ -30,7 +30,11 @@ interface Candidate {
   raven_test_token?: string;
 }
 
-const RavenTests: React.FC = () => {
+interface Props {
+  selectedJobId: string;
+}
+
+const RavenTests: React.FC<Props> = ({ selectedJobId }) => {
   const { user } = useAuth();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,11 +45,11 @@ const RavenTests: React.FC = () => {
   const [showLinkModal, setShowLinkModal] = useState(false);
 
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id && selectedJobId) {
       loadCandidates();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, selectedJobId]);
 
   /* -------------------------------- UTIL -------------------------------- */
   const getStatusBadge = (status: string) => {
@@ -67,10 +71,10 @@ const RavenTests: React.FC = () => {
 
   /* ----------------------------- DATA LOADING ---------------------------- */
   const loadCandidates = async () => {
-    if (!user?.id) return;
+    if (!user?.id || !selectedJobId) return;
     try {
       setLoading(true);
-      // Candidates with viable analysis
+      // Candidates with viable analysis for the selected job
       const { data: candidatesData, error: candidatesError } = await supabase
         .from('candidates')
         .select(`
@@ -94,6 +98,7 @@ const RavenTests: React.FC = () => {
           )
         `)
         .eq('candidate_analyses.jobs.recruiter_id', user.id)
+        .eq('candidate_analyses.job_id', selectedJobId)
         .in('candidate_analyses.recommendation', ['yes', 'maybe']);
 
       if (candidatesError) throw candidatesError;
@@ -110,13 +115,14 @@ const RavenTests: React.FC = () => {
       const candidatesWithTests: Candidate[] = (candidatesData || []).map(candidate => {
         const analysis = candidate.candidate_analyses?.[0];
         const ravenTest = ravenTestsData?.find(t => t.candidate_id === candidate.id);
+        const jobInfo = analysis?.jobs?.[0]; // jobs es un array, tomar el primer elemento
         return {
           id: candidate.id,
           name: candidate.name,
           email: candidate.email,
           phone: candidate.phone,
-          position: analysis?.jobs?.[0]?.title || 'Sin especificar',
-          job_title: analysis?.jobs?.[0]?.title,
+          position: jobInfo?.title || 'Sin especificar',
+          job_title: jobInfo?.title,
           job_id: analysis?.job_id,
           cv_status: analysis?.recommendation === 'yes' ? 'approved' : 'reviewing',
           cv_review_date: analysis?.processed_at,

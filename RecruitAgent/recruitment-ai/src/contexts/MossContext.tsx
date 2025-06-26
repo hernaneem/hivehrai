@@ -587,9 +587,13 @@ Recomendación: ${test.total_percentage && test.total_percentage >= 83 ? 'Altame
       const newStats: MossStats = {
         totalCandidates: candidates.length,
         cvsApproved: candidates.filter(c => c.cv_status === 'approved').length,
-        testsCompleted: statsData?.completed_tests || 0,
-        testsPending: statsData?.pending_tests || 0,
-        testsInProgress: statsData?.in_progress_tests || 0,
+        testsCompleted: candidates.filter(c => c.moss_status === 'completed').length,
+        testsPending: candidates.filter(c => 
+          c.moss_status === 'pending' || 
+          c.moss_status === 'in-progress' || 
+          c.moss_status === 'not-started'
+        ).length,
+        testsInProgress: candidates.filter(c => c.moss_status === 'in-progress').length,
         avgCompletionTime: statsData?.avg_completion_time || undefined,
         avgScore: statsData?.avg_score || undefined
       };
@@ -681,6 +685,11 @@ Recomendación: ${test.total_percentage && test.total_percentage >= 83 ? 'Altame
       loadTests();
     }
   }, [user?.id]);
+
+  // Actualizar estadísticas cuando cambien los candidatos
+  useEffect(() => {
+    refreshStats();
+  }, [candidates]);
 
   const value: MossContextType = {
     candidates,

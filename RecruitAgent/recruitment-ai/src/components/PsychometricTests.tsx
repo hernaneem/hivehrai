@@ -55,7 +55,11 @@ interface TermanResult {
 
 
 
-const PsychometricTests: React.FC = () => {
+interface Props {
+  selectedJobId: string;
+}
+
+const PsychometricTests: React.FC<Props> = ({ selectedJobId }) => {
   const { user } = useAuth();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,18 +71,18 @@ const PsychometricTests: React.FC = () => {
   const [filter, setFilter] = useState('all');
 
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id && selectedJobId) {
       loadCandidates();
     }
-  }, [user?.id]);
+  }, [user?.id, selectedJobId]);
 
   const loadCandidates = async () => {
-    if (!user?.id) return;
+    if (!user?.id || !selectedJobId) return;
 
     try {
       setLoading(true);
       
-      // Cargar candidatos con análisis aprobados (igual que CleaverContext y MossContext)
+      // Cargar candidatos con análisis aprobados para el trabajo seleccionado
       const { data: candidatesData, error: candidatesError } = await supabase
         .from('candidates')
         .select(`
@@ -102,6 +106,7 @@ const PsychometricTests: React.FC = () => {
           )
         `)
         .eq('candidate_analyses.jobs.recruiter_id', user.id)
+        .eq('candidate_analyses.job_id', selectedJobId)
         .in('candidate_analyses.recommendation', ['yes', 'maybe']);
 
       if (candidatesError) throw candidatesError;
@@ -138,15 +143,16 @@ const PsychometricTests: React.FC = () => {
         const analysis = candidate.candidate_analyses?.[0];
         const termanTest = termanTestsData?.find(t => t.candidate_id === candidate.id);
         const ravenTest = ravenTestsData?.find(t => t.candidate_id === candidate.id);
-const zavicTest = zavicTestsData?.find(t => t.candidate_id === candidate.id);
+        const zavicTest = zavicTestsData?.find(t => t.candidate_id === candidate.id);
+        const jobInfo = analysis?.jobs?.[0]; // jobs es un array, tomar el primer elemento
 
         return {
           id: candidate.id,
           name: candidate.name,
           email: candidate.email,
           phone: candidate.phone,
-          position: analysis?.jobs?.[0]?.title || 'Sin especificar',
-          job_title: analysis?.jobs?.[0]?.title,
+          position: jobInfo?.title || 'Sin especificar',
+          job_title: jobInfo?.title,
           job_id: analysis?.job_id,
           cv_status: analysis?.recommendation === 'yes' ? 'approved' as const : 'reviewing' as const,
           cv_review_date: analysis?.processed_at,
