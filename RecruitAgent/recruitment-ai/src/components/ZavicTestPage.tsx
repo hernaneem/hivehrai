@@ -81,14 +81,13 @@ const ZavicTestPage: React.FC = () => {
   const handleFinish = async (resultId: number) => {
     if (!test) return;
     try {
-      await supabase
-        .from('zavic_tests')
-        .update({ status: 'completed', completed_at: new Date().toISOString() })
-        .eq('id', test.id);
+      // Los resultados ya se guardaron en zavic_tests desde el componente ZavicTest
+      // Solo mostramos el mensaje de éxito y redirigimos
       alert('✅ ¡Test completado! Gracias por tu participación.');
       navigate(`/zavic-test/${token}/completed`);
     } catch (e) {
-      console.error(e);
+      console.error('Error al finalizar el test:', e);
+      alert('Error al finalizar el test. Por favor, contacta al administrador.');
     }
   };
 

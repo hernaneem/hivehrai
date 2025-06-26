@@ -1,24 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Users, FileText, CheckCircle, Clock, AlertCircle, Send, Eye, Download, Filter, Brain, Target, Copy, Briefcase } from 'lucide-react';
+import { Users, FileText, CheckCircle, Clock, AlertCircle, Send, Eye, Download, Filter, Brain, Target, Copy, Briefcase, Heart } from 'lucide-react';
 import { useCleaver } from '../contexts/CleaverContext';
 import { useMoss } from '../contexts/MossContext';
+import { useZavic } from '../contexts/ZavicContext';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import type { CandidateWithTestInfo } from '../contexts/CleaverContext';
 import type { CandidateWithMossInfo } from '../contexts/MossContext';
+import type { CandidateWithZavicInfo } from '../contexts/ZavicContext';
 import CleaverResultsDashboard from './CleaverResultsDashboard';
 import MossResultsDashboard from './MossResultsDashboard';
+import ZavicResultsDashboard from './ZavicResultsDashboard';
 import PsychometricTests from './PsychometricTests';
 import RavenTests from './RavenTests';
+import useJobs from '../hooks/useJobs';
+import JobSelector from './Tests/JobSelector';
 
-interface Job {
-  id: string;
-  title: string;
-  company: string;
-  status: string;
-  created_at: string;
-  approved_candidates_count?: number;
-}
+// Job type is now imported from useJobs hook
 
 const Tests = () => {
   const { user } = useAuth();
@@ -42,7 +40,16 @@ const Tests = () => {
     exportTestResults: exportMossTestResults
   } = useMoss();
 
-  const [activeTab, setActiveTab] = useState<'cleaver' | 'moss' | 'terman' | 'raven'>('cleaver');
+  const {
+    candidates: zavicCandidates,
+    loading: zavicLoading,
+    error: zavicError,
+    createTest: createZavicTest,
+    getTestResults: getZavicTestResults,
+    exportTestResults: exportZavicTestResults
+  } = useZavic();
+
+  const [activeTab, setActiveTab] = useState<'cleaver' | 'moss' | 'terman' | 'raven' | 'zavic'>('cleaver');
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateWithTestInfo | null>(null);
 
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -50,75 +57,8 @@ const Tests = () => {
   const [testResults, setTestResults] = useState<any>(null);
   const [showResultsDashboard, setShowResultsDashboard] = useState(false);
 
-  // Estados para el selector de trabajos
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [selectedJobId, setSelectedJobId] = useState<string>('all');
-  const [jobsLoading, setJobsLoading] = useState(true);
-
-  // Cargar trabajos activos con candidatos aprobados
-  const loadActiveJobs = async () => {
-    if (!user?.id) return;
-
-    try {
-      setJobsLoading(true);
-      
-      console.log('🔍 Tests - Cargando trabajos para recruiter:', user.id);
-      
-      // Primero obtener todos los trabajos activos
-      const { data: allJobsData, error: allJobsError } = await supabase
-        .from('jobs')
-        .select('id, title, company, status, created_at')
-        .eq('recruiter_id', user.id)
-        .eq('status', 'active');
-
-      if (allJobsError) throw allJobsError;
-
-      // Luego contar candidatos viables por trabajo
-      const jobsWithCounts: Job[] = [];
-      
-      for (const job of allJobsData || []) {
-        const { data: candidatesCount, error: countError } = await supabase
-          .from('candidate_analyses')
-          .select('candidate_id')
-          .eq('job_id', job.id)
-          .in('recommendation', ['yes', 'maybe']);
-
-        if (countError) {
-          console.error('Error contando candidatos para trabajo:', job.id, countError);
-          continue;
-        }
-
-        // Contar candidatos únicos
-        const uniqueCandidates = new Set(candidatesCount?.map(c => c.candidate_id) || []);
-        
-        if (uniqueCandidates.size > 0) {
-          jobsWithCounts.push({
-            id: job.id,
-            title: job.title,
-            company: job.company,
-            status: job.status,
-            created_at: job.created_at,
-            approved_candidates_count: uniqueCandidates.size
-          });
-        }
-      }
-
-      console.log('🔍 Tests - Trabajos procesados:', jobsWithCounts.length);
-      console.log('🔍 Tests - Trabajos finales:', jobsWithCounts);
-      
-      setJobs(jobsWithCounts);
-
-    } catch (error) {
-      console.error('Error cargando trabajos:', error);
-    } finally {
-      setJobsLoading(false);
-    }
-  };
-
-  // Cargar trabajos al montar el componente
-  useEffect(() => {
-    loadActiveJobs();
-  }, [user?.id]);
+  // Estados y lógica de trabajos delegados al hook useJobs
+  const { jobs, selectedJobId, setSelectedJobId, jobsLoading } = useJobs();
 
   const getStatusBadge = (status: string) => {
     const badges = {
@@ -196,6 +136,35 @@ const Tests = () => {
     }
   };
 
+  const sendZavicInvitation = async (candidateId: string) => {
+    try {
+      const candidate = zavicCandidates.find(c => c.id === candidateId);
+      if (!candidate?.job_id) {
+        alert('Error: No se puede enviar invitación, falta información del trabajo');
+        return;
+      }
+
+      // Crear el test y obtener los datos del test creado
+      const createdTest = await createZavicTest(candidateId, candidate.job_id);
+      
+      // Crear un candidato temporal con la información del test para mostrar inmediatamente
+      const candidateWithTest = {
+        ...candidate,
+        zavic_status: 'pending' as const,
+        zavic_invitation_sent: true,
+        zavic_test_id: createdTest.id,
+        zavic_test_token: createdTest.test_token
+      };
+      
+      // Para ZAVIC, usamos el mismo modal
+      setSelectedCandidate(candidateWithTest as any);
+      setShowLinkModal(true);
+      
+    } catch (error) {
+      alert(`Error enviando invitación: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+    }
+  };
+
   const generateCleaverLink = (candidateId: string) => {
     // Primero buscar en selectedCandidate si coincide el ID
     if (selectedCandidate?.id === candidateId && selectedCandidate?.test_token) {
@@ -226,8 +195,25 @@ const Tests = () => {
     return '';
   };
 
+  const generateZavicLink = (candidateId: string) => {
+    // Primero buscar en selectedCandidate si coincide el ID
+    if (selectedCandidate?.id === candidateId && (selectedCandidate as any)?.zavic_test_token) {
+      return `${window.location.origin}/zavic-test/${(selectedCandidate as any).zavic_test_token}`;
+    }
+    
+    // Luego buscar en la lista de candidatos
+    const candidate = zavicCandidates.find(c => c.id === candidateId);
+    if (candidate?.zavic_test_token) {
+      return `${window.location.origin}/zavic-test/${candidate.zavic_test_token}`;
+    }
+    
+    return '';
+  };
+
   const filteredCandidates = () => {
-    const candidates = activeTab === 'cleaver' ? cleaverCandidates : mossCandidates;
+    const candidates = activeTab === 'cleaver' ? cleaverCandidates 
+                     : activeTab === 'moss' ? mossCandidates 
+                     : zavicCandidates;
     
     return candidates.filter(candidate => {
       // Filtrar por trabajo seleccionado
@@ -243,10 +229,14 @@ const Tests = () => {
         const cleaverCandidate = candidate as CandidateWithTestInfo;
         if (filter === 'test-pending') return cleaverCandidate.cleaver_status === 'pending';
         if (filter === 'test-completed') return cleaverCandidate.cleaver_status === 'completed';
-      } else {
+      } else if (activeTab === 'moss') {
         const mossCandidate = candidate as CandidateWithMossInfo;
         if (filter === 'test-pending') return mossCandidate.moss_status === 'pending';
         if (filter === 'test-completed') return mossCandidate.moss_status === 'completed';
+      } else if (activeTab === 'zavic') {
+        const zavicCandidate = candidate as CandidateWithZavicInfo;
+        if (filter === 'test-pending') return zavicCandidate.zavic_status === 'pending';
+        if (filter === 'test-completed') return zavicCandidate.zavic_status === 'completed';
       }
       
       return true;
@@ -401,7 +391,55 @@ const Tests = () => {
     }
   };
 
-  const exportResults = async (candidate: CandidateWithTestInfo | CandidateWithMossInfo) => {
+  const viewZavicResults = async (candidate: CandidateWithZavicInfo) => {
+    try {
+      if (!candidate.zavic_test_id) {
+        alert('No hay test disponible para ver resultados');
+        return;
+      }
+      const results = await getZavicTestResults(candidate.zavic_test_id);
+      
+      if (!results) {
+        alert('No se encontraron resultados para este test');
+        return;
+      }
+
+      // Adaptar el formato de datos para el dashboard
+      const adaptedResults = {
+        id: results.id,
+        candidate: {
+          name: results.candidate?.name || candidate.name,
+          email: results.candidate?.email || candidate.email
+        },
+        job: {
+          title: results.job?.title || candidate.position || 'No especificado',
+          company: results.job?.company
+        },
+        status: results.status,
+        completed_at: results.completed_at || '',
+        time_spent_minutes: results.time_spent_minutes,
+        scores: {
+          moral: results.moral_score || 0,
+          legalidad: results.legalidad_score || 0,
+          indiferencia: results.indiferencia_score || 0,
+          corrupcion: results.corrupcion_score || 0,
+          economico: results.economico_score || 0,
+          politico: results.politico_score || 0,
+          social: results.social_score || 0,
+          religioso: results.religioso_score || 0,
+        },
+        total_score: results.total_score || 0
+      };
+
+      setTestResults(adaptedResults);
+      setShowResultsDashboard(true);
+    } catch (error) {
+      console.error('Error al cargar resultados ZAVIC:', error);
+      alert(`Error cargando resultados: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+    }
+  };
+
+  const exportResults = async (candidate: CandidateWithTestInfo | CandidateWithMossInfo | CandidateWithZavicInfo) => {
     try {
       if (activeTab === 'cleaver') {
         const cleaverCandidate = candidate as CandidateWithTestInfo;
@@ -410,13 +448,20 @@ const Tests = () => {
           return;
         }
         await exportCleaverTestResults(cleaverCandidate.test_id);
-      } else {
+      } else if (activeTab === 'moss') {
         const mossCandidate = candidate as CandidateWithMossInfo;
         if (!mossCandidate.test_id) {
           alert('No hay test disponible para exportar');
           return;
         }
         await exportMossTestResults(mossCandidate.test_id);
+      } else if (activeTab === 'zavic') {
+        const zavicCandidate = candidate as CandidateWithZavicInfo;
+        if (!zavicCandidate.zavic_test_id) {
+          alert('No hay test disponible para exportar');
+          return;
+        }
+        await exportZavicTestResults(zavicCandidate.zavic_test_id);
       }
     } catch (error) {
       alert(`Error exportando resultados: ${error instanceof Error ? error.message : 'Error desconocido'}`);
@@ -427,6 +472,14 @@ const Tests = () => {
     ? cleaverStats
     : activeTab === 'moss'
     ? mossStats
+    : activeTab === 'zavic'
+    ? {
+        totalCandidates: zavicCandidates.length,
+        cvsApproved: zavicCandidates.filter(c => c.cv_status === 'approved' || c.cv_status === 'reviewing').length,
+        testsCompleted: zavicCandidates.filter(c => c.zavic_status === 'completed').length,
+        testsPending: zavicCandidates.filter(c => c.zavic_status === 'pending').length,
+        testsInProgress: zavicCandidates.filter(c => c.zavic_status === 'in-progress').length
+      }
     : {
         totalCandidates: 0,
         cvsApproved: 0,
@@ -434,8 +487,8 @@ const Tests = () => {
         testsPending: 0,
         testsInProgress: 0
       };
-  const currentLoading = activeTab === 'cleaver' ? cleaverLoading : mossLoading;
-  const currentError = activeTab === 'cleaver' ? cleaverError : mossError;
+  const currentLoading = activeTab === 'cleaver' ? cleaverLoading : activeTab === 'moss' ? mossLoading : zavicLoading;
+  const currentError = activeTab === 'cleaver' ? cleaverError : activeTab === 'moss' ? mossError : zavicError;
 
   if (currentLoading) {
     return (
@@ -515,6 +568,17 @@ const Tests = () => {
             <Brain className="h-5 w-5" />
             <span>Test Raven (RPM)</span>
           </button>
+          <button
+            onClick={() => setActiveTab('zavic')}
+            className={`px-6 py-3 rounded-lg font-semibold transition-all flex items-center space-x-2 ${
+              activeTab === 'zavic'
+                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white'
+                : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
+            }`}
+          >
+            <Heart className="h-5 w-5" />
+            <span>Test ZAVIC (Valores)</span>
+          </button>
         </div>
 
         <p className="text-white/70">
@@ -524,116 +588,64 @@ const Tests = () => {
             ? 'Gestión de evaluaciones MOSS (Habilidades Interpersonales) para candidatos'
             : activeTab === 'raven'
             ? 'Gestión de evaluaciones Raven Progressive Matrices para candidatos'
+            : activeTab === 'zavic'
+            ? 'Gestión de evaluaciones ZAVIC (Valores e Intereses) para candidatos'
             : 'Gestión de evaluaciones Terman-Merrill (Inteligencia) para candidatos'
           }
         </p>
       </div>
 
       {/* Selector de Trabajos */}
-      <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
-        <div className="flex items-center space-x-3 mb-4">
-          <Briefcase className="h-5 w-5 text-white/70" />
-          <h2 className="text-lg font-semibold text-white">Seleccionar Trabajo</h2>
-        </div>
-        
-        {jobsLoading ? (
-          <div className="flex items-center space-x-2 text-white/70">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-500"></div>
-            <span>Cargando trabajos...</span>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Opción "Todos los trabajos" */}
-            <button
-              onClick={() => setSelectedJobId('all')}
-              className={`p-4 rounded-lg border transition-all text-left ${
-                selectedJobId === 'all'
-                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-purple-400 text-white'
-                  : 'bg-white/5 border-white/20 text-white/70 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <div className="font-semibold">Todos los Trabajos</div>
-              <div className="text-sm opacity-75">
-                Ver candidatos de todas las posiciones
-              </div>
-              <div className="text-xs mt-2 opacity-60">
-                {(cleaverCandidates.length || mossCandidates.length)} candidatos totales
-              </div>
-            </button>
-
-            {/* Trabajos específicos */}
-            {jobs.map(job => (
-              <button
-                key={job.id}
-                onClick={() => setSelectedJobId(job.id)}
-                className={`p-4 rounded-lg border transition-all text-left ${
-                  selectedJobId === job.id
-                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-purple-400 text-white'
-                    : 'bg-white/5 border-white/20 text-white/70 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <div className="font-semibold">{job.title}</div>
-                <div className="text-sm opacity-75">{job.company}</div>
-                <div className="text-xs mt-2 opacity-60">
-                  {job.approved_candidates_count} candidatos viables
-                </div>
-              </button>
-            ))}
-
-            {jobs.length === 0 && (
-              <div className="col-span-full text-center py-8 text-white/50">
-                <Briefcase className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>No hay trabajos activos con candidatos viables</p>
-                <p className="text-sm mt-1">Los candidatos aparecerán aquí una vez que tengas CVs aprobados o viables</p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      <JobSelector
+        jobs={jobs}
+        jobsLoading={jobsLoading}
+        selectedJobId={selectedJobId}
+        setSelectedJobId={setSelectedJobId}
+      />
 
       {/* Estadísticas */}
-      {(activeTab === 'cleaver' || activeTab === 'moss') && (
+      {(activeTab === 'cleaver' || activeTab === 'moss' || activeTab === 'zavic') && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-white/70 text-sm">Total Candidatos</p>
-              <p className="text-2xl font-bold text-white">{currentStats.totalCandidates}</p>
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/70 text-sm">Total Candidatos</p>
+                <p className="text-2xl font-bold text-white">{currentStats.totalCandidates}</p>
+              </div>
+              <Users className="h-8 w-8 text-blue-400" />
             </div>
-            <Users className="h-8 w-8 text-blue-400" />
+          </div>
+          
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/70 text-sm">CVs Aprobados</p>
+                <p className="text-2xl font-bold text-white">{currentStats.cvsApproved}</p>
+              </div>
+              <FileText className="h-8 w-8 text-green-400" />
+            </div>
+          </div>
+          
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/70 text-sm">Tests Completados</p>
+                <p className="text-2xl font-bold text-white">{currentStats.testsCompleted}</p>
+              </div>
+              <CheckCircle className="h-8 w-8 text-green-400" />
+            </div>
+          </div>
+          
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-white/70 text-sm">Pendientes</p>
+                <p className="text-2xl font-bold text-white">{currentStats.testsPending}</p>
+              </div>
+              <Clock className="h-8 w-8 text-yellow-400" />
+            </div>
           </div>
         </div>
-        
-        <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-white/70 text-sm">CVs Aprobados</p>
-              <p className="text-2xl font-bold text-white">{currentStats.cvsApproved}</p>
-            </div>
-            <FileText className="h-8 w-8 text-green-400" />
-          </div>
-        </div>
-        
-        <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-white/70 text-sm">Tests Completados</p>
-              <p className="text-2xl font-bold text-white">{currentStats.testsCompleted}</p>
-            </div>
-            <CheckCircle className="h-8 w-8 text-green-400" />
-          </div>
-        </div>
-        
-        <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-white/70 text-sm">Pendientes</p>
-              <p className="text-2xl font-bold text-white">{currentStats.testsPending}</p>
-            </div>
-            <Clock className="h-8 w-8 text-yellow-400" />
-          </div>
-        </div>
-      </div>
       )}
 
       {/* Renderizar contenido según pestaña activa */}
@@ -692,126 +704,151 @@ const Tests = () => {
             </div>
           </div>
 
-      {/* Tabla de candidatos */}
-      <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full">
-            <thead className="bg-white/5">
-              <tr>
-                <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
-                  Candidato
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
-                  Puesto
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
-                  Estado CV
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
-                  Estado Test
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
-                  Acciones
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/10">
-              {filteredCandidates().map((candidate) => {
-                const testStatus = activeTab === 'cleaver' 
-                  ? (candidate as CandidateWithTestInfo).cleaver_status
-                  : (candidate as CandidateWithMossInfo).moss_status;
-
-                return (
-                  <tr key={candidate.id} className="hover:bg-white/5 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div>
-                        <div className="text-sm font-medium text-white">{candidate.name}</div>
-                        <div className="text-sm text-white/60">{candidate.email}</div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-white">{candidate.position}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getStatusBadge(candidate.cv_status)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {getStatusBadge(testStatus)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-3">
-                        {(candidate.cv_status === 'approved' || candidate.cv_status === 'reviewing') && !candidate.test_token && (
-                          <button
-                            onClick={() => activeTab === 'cleaver' 
-                              ? sendCleaverInvitation(candidate.id)
-                              : sendMossInvitation(candidate.id)
-                            }
-                            className="text-blue-400 hover:text-blue-300 flex items-center space-x-1 transition-colors"
-                          >
-                            <Send className="h-4 w-4" />
-                            <span>Crear Test</span>
-                          </button>
-                        )}
-
-                        {(candidate.cv_status === 'approved' || candidate.cv_status === 'reviewing') && candidate.test_token && testStatus !== 'completed' && (
-                          <button
-                            onClick={() => {
-                              setSelectedCandidate(candidate as any);
-                              setShowLinkModal(true);
-                            }}
-                            className="text-purple-400 hover:text-purple-300 flex items-center space-x-1 transition-colors"
-                          >
-                            <Copy className="h-4 w-4" />
-                            <span>Copiar Enlace</span>
-                          </button>
-                        )}
-                        
-                        {testStatus === 'completed' && (
-                          <>
-                            {activeTab === 'cleaver' && (
-                              <button
-                                onClick={() => viewCleaverResults(candidate as CandidateWithTestInfo)}
-                                className="text-green-400 hover:text-green-300 flex items-center space-x-1 transition-colors"
-                              >
-                                <Eye className="h-4 w-4" />
-                                <span>Ver Resultados</span>
-                              </button>
-                            )}
-                            
-                            {activeTab === 'moss' && (
-                              <button
-                                onClick={() => viewMossResults(candidate as CandidateWithMossInfo)}
-                                className="text-green-400 hover:text-green-300 flex items-center space-x-1 transition-colors"
-                              >
-                                <Eye className="h-4 w-4" />
-                                <span>Ver Resultados</span>
-                              </button>
-                            )}
-                            
-                            <button
-                              onClick={() => exportResults(candidate)}
-                              className="text-white/70 hover:text-white flex items-center space-x-1 transition-colors"
-                            >
-                              <Download className="h-4 w-4" />
-                              <span>Exportar</span>
-                            </button>
-                          </>
-                        )}
-                        
-                        {candidate.test_token && testStatus === 'pending' && (
-                          <span className="text-yellow-400 flex items-center space-x-1">
-                            <AlertCircle className="h-4 w-4" />
-                            <span>Esperando respuesta</span>
-                          </span>
-                        )}
-                      </div>
-                    </td>
+          {/* Tabla de candidatos */}
+          <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead className="bg-white/5">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
+                      Candidato
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
+                      Puesto
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
+                      Estado CV
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
+                      Estado Test
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
+                      Acciones
+                    </th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {filteredCandidates().map((candidate) => {
+                    const testStatus = activeTab === 'cleaver' 
+                      ? (candidate as CandidateWithTestInfo).cleaver_status
+                      : activeTab === 'moss'
+                      ? (candidate as CandidateWithMossInfo).moss_status
+                      : (candidate as CandidateWithZavicInfo).zavic_status;
+
+                    return (
+                      <tr key={candidate.id} className="hover:bg-white/5 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-medium text-white">{candidate.name}</div>
+                            <div className="text-sm text-white/60">{candidate.email}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-white">{candidate.position}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {getStatusBadge(candidate.cv_status)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          {getStatusBadge(testStatus)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <div className="flex space-x-3">
+                            {(candidate.cv_status === 'approved' || candidate.cv_status === 'reviewing') && 
+                             !((activeTab === 'cleaver' && (candidate as CandidateWithTestInfo).test_token) ||
+                               (activeTab === 'moss' && (candidate as CandidateWithMossInfo).test_token) ||
+                               (activeTab === 'zavic' && (candidate as CandidateWithZavicInfo).zavic_test_token)) && (
+                              <button
+                                onClick={() => {
+                                  if (activeTab === 'cleaver') sendCleaverInvitation(candidate.id);
+                                  else if (activeTab === 'moss') sendMossInvitation(candidate.id);
+                                  else if (activeTab === 'zavic') sendZavicInvitation(candidate.id);
+                                }}
+                                className="text-blue-400 hover:text-blue-300 flex items-center space-x-1 transition-colors"
+                              >
+                                <Send className="h-4 w-4" />
+                                <span>Crear Test</span>
+                              </button>
+                            )}
+
+                            {(candidate.cv_status === 'approved' || candidate.cv_status === 'reviewing') && 
+                             ((activeTab === 'cleaver' && (candidate as CandidateWithTestInfo).test_token) ||
+                              (activeTab === 'moss' && (candidate as CandidateWithMossInfo).test_token) ||
+                              (activeTab === 'zavic' && (candidate as CandidateWithZavicInfo).zavic_test_token)) && 
+                             testStatus !== 'completed' && (
+                              <button
+                                onClick={() => {
+                                  setSelectedCandidate(candidate as any);
+                                  setShowLinkModal(true);
+                                }}
+                                className="text-purple-400 hover:text-purple-300 flex items-center space-x-1 transition-colors"
+                              >
+                                <Copy className="h-4 w-4" />
+                                <span>Copiar Enlace</span>
+                              </button>
+                            )}
+
+                            {testStatus === 'completed' && (
+                              <>
+                                {activeTab === 'cleaver' && (
+                                  <button
+                                    onClick={() => viewCleaverResults(candidate as CandidateWithTestInfo)}
+                                    className="text-green-400 hover:text-green-300 flex items-center space-x-1 transition-colors"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                    <span>Ver Resultados</span>
+                                  </button>
+                                )}
+                                
+                                {activeTab === 'moss' && (
+                                  <button
+                                    onClick={() => viewMossResults(candidate as CandidateWithMossInfo)}
+                                    className="text-green-400 hover:text-green-300 flex items-center space-x-1 transition-colors"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                    <span>Ver Resultados</span>
+                                  </button>
+                                )}
+
+                                {activeTab === 'zavic' && (
+                                  <button
+                                    onClick={() => viewZavicResults(candidate as CandidateWithZavicInfo)}
+                                    className="text-green-400 hover:text-green-300 flex items-center space-x-1 transition-colors"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                    <span>Ver Resultados</span>
+                                  </button>
+                                )}
+                                
+                                <button
+                                  onClick={() => exportResults(candidate)}
+                                  className="text-white/70 hover:text-white flex items-center space-x-1 transition-colors"
+                                >
+                                  <Download className="h-4 w-4" />
+                                  <span>Exportar</span>
+                                </button>
+                              </>
+                            )}
+
+                            {((activeTab === 'cleaver' && (candidate as CandidateWithTestInfo).test_token) ||
+                              (activeTab === 'moss' && (candidate as CandidateWithMossInfo).test_token) ||
+                              (activeTab === 'zavic' && (candidate as CandidateWithZavicInfo).zavic_test_token)) && 
+                             testStatus === 'pending' && (
+                              <span className="text-yellow-400 flex items-center space-x-1">
+                                <AlertCircle className="h-4 w-4" />
+                                <span>Esperando respuesta</span>
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* Mensaje cuando no hay candidatos */}
           {filteredCandidates().length === 0 && (
             <div className="text-center py-12 px-6">
@@ -832,40 +869,42 @@ const Tests = () => {
                     <Briefcase className="h-16 w-16 mx-auto mb-4 opacity-50" />
                     <h3 className="text-lg font-semibold mb-2">No hay candidatos para este trabajo</h3>
                     <p className="text-sm">
-                      No hay candidatos viables para la posición seleccionada.
+                      No tienes candidatos viables para este trabajo específico.
                     </p>
                     <p className="text-sm mt-2">
-                      Selecciona "Todos los Trabajos" para ver candidatos de otras posiciones.
+                      Prueba a seleccionar otro trabajo o revisa la sección de Análisis.
                     </p>
                   </>
                 )}
               </div>
             </div>
           )}
-        </div>
-      </div>
+        </>
+      )}
 
-              {/* Modal de enlace generado - Para ambos tipos de tests */}
-        {selectedCandidate && showLinkModal && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-6 w-full max-w-lg">
-              <h3 className="text-lg font-bold text-white mb-4">
-                {activeTab === 'cleaver' ? '🧠 Enlace de Test Cleaver' : '🎯 Enlace de Test MOSS'}
-              </h3>
-              <p className="text-white/70 text-sm mb-4">
-                Comparte este enlace con <strong className="text-white">{selectedCandidate?.name}</strong> para que realice el test {activeTab === 'cleaver' ? 'psicométrico' : 'de habilidades interpersonales'}:
-              </p>
-            
+      {/* Modal de enlace generado - Para ambos tipos de tests */}
+      {selectedCandidate && showLinkModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-6 w-full max-w-lg">
+            <h3 className="text-lg font-bold text-white mb-4">
+              {activeTab === 'cleaver' ? '🧠 Enlace de Test Cleaver' 
+               : activeTab === 'moss' ? '🎯 Enlace de Test MOSS'
+               : '❤️ Enlace de Test ZAVIC'}
+            </h3>
+            <p className="text-white/70 text-sm mb-4">
+              Comparte este enlace con <strong className="text-white">{selectedCandidate?.name}</strong> para que realice el test {activeTab === 'cleaver' ? 'psicométrico' : activeTab === 'moss' ? 'de habilidades interpersonales' : 'de valores e intereses'}:
+            </p>
+
             {/* Información del candidato */}
             <div className="bg-black/20 p-3 rounded-lg mb-4 border border-white/10">
               <div className="text-sm text-white/80 mb-2">
-                <strong>Candidato:</strong> {selectedCandidate.name}
+                <strong>Candidato:</strong> {selectedCandidate?.name}
               </div>
               <div className="text-sm text-white/80 mb-2">
-                <strong>Email:</strong> {selectedCandidate.email}
+                <strong>Email:</strong> {selectedCandidate?.email}
               </div>
               <div className="text-sm text-white/80">
-                <strong>Puesto:</strong> {selectedCandidate.position}
+                <strong>Puesto:</strong> {selectedCandidate?.position}
               </div>
             </div>
 
@@ -877,7 +916,9 @@ const Tests = () => {
                   {selectedCandidate ? (
                     activeTab === 'cleaver' 
                       ? generateCleaverLink(selectedCandidate.id)
-                      : generateMossLink(selectedCandidate.id)
+                      : activeTab === 'moss'
+                      ? generateMossLink(selectedCandidate.id)
+                      : generateZavicLink(selectedCandidate.id)
                   ) : 'Generando enlace...'}
                 </code>
                 <button
@@ -885,7 +926,9 @@ const Tests = () => {
                     if (selectedCandidate) {
                       const link = activeTab === 'cleaver' 
                         ? generateCleaverLink(selectedCandidate.id)
-                        : generateMossLink(selectedCandidate.id);
+                        : activeTab === 'moss'
+                        ? generateMossLink(selectedCandidate.id)
+                        : generateZavicLink(selectedCandidate.id);
                       if (link) {
                         navigator.clipboard.writeText(link);
                         alert('📋 Enlace copiado!');
@@ -910,13 +953,21 @@ const Tests = () => {
                     <li>• El enlace expira en 7 días</li>
                     <li>• No hay respuestas correctas o incorrectas</li>
                   </>
-                ) : (
+                ) : activeTab === 'moss' ? (
                   <>
                     <li>• El test tiene una duración aproximada de 20-25 minutos</li>
                     <li>• Consta de 30 preguntas sobre situaciones interpersonales</li>
                     <li>• Debe completarse en una sola sesión</li>
                     <li>• El enlace expira en 7 días</li>
                     <li>• Responde de forma espontánea y honesta</li>
+                  </>
+                ) : (
+                  <>
+                    <li>• El test tiene una duración aproximada de 25-30 minutos</li>
+                    <li>• Consta de 20 preguntas sobre situaciones éticas y de valores</li>
+                    <li>• Debe asignar valores del 1 al 4 a cada opción</li>
+                    <li>• El enlace expira en 7 días</li>
+                    <li>• Responde según tu verdadera escala de valores</li>
                   </>
                 )}
               </ul>
@@ -928,7 +979,9 @@ const Tests = () => {
                   if (selectedCandidate) {
                     const link = activeTab === 'cleaver' 
                       ? generateCleaverLink(selectedCandidate.id)
-                      : generateMossLink(selectedCandidate.id);
+                      : activeTab === 'moss'
+                      ? generateMossLink(selectedCandidate.id)
+                      : generateZavicLink(selectedCandidate.id);
                     if (link) {
                       navigator.clipboard.writeText(link);
                       alert('✅ Enlace copiado al portapapeles');
@@ -976,7 +1029,16 @@ const Tests = () => {
           }}
         />
       )}
-        </>
+
+      {/* Dashboard de resultados - ZAVIC */}
+      {showResultsDashboard && testResults && activeTab === 'zavic' && (
+        <ZavicResultsDashboard
+          results={testResults}
+          onClose={() => {
+            setShowResultsDashboard(false);
+            setTestResults(null);
+          }}
+        />
       )}
     </div>
   );

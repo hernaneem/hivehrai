@@ -235,6 +235,43 @@ export default function ZavicTest({ candidateId, testToken, onComplete }: ZavicT
   const [loading, setLoading] = useState(false);
   const [savedSuccessfully, setSavedSuccessfully] = useState(false);
 
+  // Cargar respuestas existentes del test al iniciar
+  useEffect(() => {
+    const loadExistingAnswers = async () => {
+      if (!testToken) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('zavic_tests')
+          .select('answers')
+          .eq('test_token', testToken)
+          .single();
+          
+        if (error) {
+          console.error('Error cargando respuestas existentes:', error);
+          return;
+        }
+        
+        if (data?.answers) {
+          setAnswers(data.answers);
+          // Si hay respuestas, ir a la primera pregunta sin responder
+          const answeredQuestions = Object.keys(data.answers);
+          if (answeredQuestions.length > 0) {
+            const nextQuestion = answeredQuestions.length;
+            if (nextQuestion < questions.length) {
+              setCurrentQuestion(nextQuestion);
+              setCurrentAnswer(data.answers[nextQuestion + 1] || {});
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error al cargar respuestas:', error);
+      }
+    };
+    
+    loadExistingAnswers();
+  }, [testToken]);
+
   // Validar que todas las opciones tengan valores diferentes del 1 al 4
   const validateCurrentAnswer = (): boolean => {
     const values = Object.values(currentAnswer);
@@ -259,7 +296,24 @@ export default function ZavicTest({ candidateId, testToken, onComplete }: ZavicT
     setError('');
   };
 
-  const handleNext = () => {
+  // Función para guardar respuestas progresivamente en zavic_tests
+  const saveAnswersToZavicTests = async (allAnswers: { [key: number]: Answer }) => {
+    if (!testToken) return;
+    
+    try {
+      await supabase
+        .from('zavic_tests')
+        .update({ 
+          answers: allAnswers,
+          updated_at: new Date().toISOString()
+        })
+        .eq('test_token', testToken);
+    } catch (error) {
+      console.error('Error guardando respuestas en zavic_tests:', error);
+    }
+  };
+
+  const handleNext = async () => {
     if (!validateCurrentAnswer()) {
       setError('Debe asignar valores del 1 al 4 a cada opción, sin repetir números.');
       return;
@@ -269,6 +323,9 @@ export default function ZavicTest({ candidateId, testToken, onComplete }: ZavicT
     newAnswers[currentQuestion + 1] = currentAnswer;
     setAnswers(newAnswers);
 
+    // Guardar respuestas progresivamente en zavic_tests
+    await saveAnswersToZavicTests(newAnswers);
+
     if (currentQuestion < questions.length - 1) {
       setCurrentQuestion(currentQuestion + 1);
       setCurrentAnswer(answers[currentQuestion + 2] || {});
@@ -277,51 +334,85 @@ export default function ZavicTest({ candidateId, testToken, onComplete }: ZavicT
     }
   };
 
-  const handlePrevious = () => {
+  const handlePrevious = async () => {
     if (currentQuestion > 0) {
+      // Guardar la respuesta actual antes de ir a la anterior
+      if (validateCurrentAnswer()) {
+        const newAnswers = { ...answers };
+        newAnswers[currentQuestion + 1] = currentAnswer;
+        setAnswers(newAnswers);
+        await saveAnswersToZavicTests(newAnswers);
+      }
+      
       setCurrentQuestion(currentQuestion - 1);
       setCurrentAnswer(answers[currentQuestion] || {});
       setError('');
     }
   };
 
-  const saveResultsToSupabase = async (calculatedResults: ZavicResults) => {
-    if (!user) {
-      setError('Debes iniciar sesión para guardar los resultados');
-      return;
-    }
 
+
+  // Función para guardar los scores finales en zavic_tests
+  const saveScoresToZavicTests = async (scores: ZavicResults) => {
+    if (!testToken) return;
+    
     try {
       setLoading(true);
+      setError(''); // Limpiar errores previos
       
-      const { data, error } = await supabase
-        .from('zavic_results')
-        .insert({
-          user_id: user.id,
-          answers: answers,
-          moral_score: calculatedResults.moral,
-          legalidad_score: calculatedResults.legalidad,
-          indiferencia_score: calculatedResults.indiferencia,
-          corrupcion_score: calculatedResults.corrupcion,
-          economico_score: calculatedResults.economico,
-          politico_score: calculatedResults.politico,
-          social_score: calculatedResults.social,
-          religioso_score: calculatedResults.religioso
-        })
-        .select()
+      const totalScore = scores.moral + scores.legalidad + scores.indiferencia + 
+                        scores.corrupcion + scores.economico + scores.politico + 
+                        scores.social + scores.religioso;
+      
+      // Obtener started_at para calcular tiempo transcurrido
+      const { data: testData } = await supabase
+        .from('zavic_tests')
+        .select('started_at')
+        .eq('test_token', testToken)
         .single();
-
+      
+      let timeSpentMinutes = null;
+      if (testData?.started_at) {
+        const startTime = new Date(testData.started_at);
+        const endTime = new Date();
+        timeSpentMinutes = Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60));
+      }
+      
+      const { error } = await supabase
+        .from('zavic_tests')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          moral_score: scores.moral,
+          legalidad_score: scores.legalidad,
+          indiferencia_score: scores.indiferencia,
+          corrupcion_score: scores.corrupcion,
+          economico_score: scores.economico,
+          politico_score: scores.politico,
+          social_score: scores.social,
+          religioso_score: scores.religioso,
+          total_score: totalScore,
+          test_date: new Date().toISOString(),
+          time_spent_minutes: timeSpentMinutes,
+          updated_at: new Date().toISOString()
+        })
+        .eq('test_token', testToken);
+        
       if (error) throw error;
-
-      console.log('Resultados guardados:', data);
+      
+      console.log('Scores guardados en zavic_tests:', scores);
       setSavedSuccessfully(true);
-
-    if (onComplete && data?.id) {
-      onComplete(data.id);
-    }
-    } catch (err) {
-      console.error('Error al guardar resultados:', err);
-      setError('Error al guardar los resultados');
+      
+      // Llamar al callback onComplete si existe
+      if (onComplete) {
+        // Para mantener compatibilidad, creamos un ID temporal
+        const tempId = Date.now();
+        onComplete(tempId);
+      }
+      
+    } catch (error) {
+      console.error('Error guardando scores en zavic_tests:', error);
+      setError('Error al guardar los resultados finales');
     } finally {
       setLoading(false);
     }
@@ -364,11 +455,6 @@ export default function ZavicTest({ candidateId, testToken, onComplete }: ZavicT
 
     setResults(scores);
     setShowResults(true);
-    
-    // Guardar automáticamente si el usuario está autenticado
-    if (user) {
-      await saveResultsToSupabase(scores);
-    }
   };
 
   const getInterpretation = (category: string, score: number): { level: string; description: string } => {
@@ -499,13 +585,53 @@ export default function ZavicTest({ candidateId, testToken, onComplete }: ZavicT
             </div>
           )}
 
-          {user && savedSuccessfully && !loading && (
-            <div className="mt-4 text-center text-sm text-green-600">
-              ✓ Resultados guardados exitosamente
+          {savedSuccessfully && !loading && (
+            <div className="mt-4 text-center text-sm text-green-600 bg-green-50 border border-green-200 rounded-lg p-3">
+              <div className="flex items-center justify-center">
+                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                ✓ Resultados enviados y guardados exitosamente
+              </div>
             </div>
           )}
 
-          <div className="flex justify-center mt-6">
+          {error && (
+            <div className="mt-4 text-center text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="flex items-center justify-center">
+                <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                {error}
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-center gap-4 mt-6">
+            {!savedSuccessfully && (
+              <button
+                onClick={() => saveScoresToZavicTests(results)}
+                disabled={loading}
+                className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+                  loading
+                    ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                    : 'bg-green-500 text-white hover:bg-green-600'
+                }`}
+              >
+                {loading ? (
+                  <div className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Enviando...
+                  </div>
+                ) : (
+                  'Enviar Resultados'
+                )}
+              </button>
+            )}
+            
             <button
               onClick={() => {
                 setShowResults(false);
@@ -529,9 +655,19 @@ export default function ZavicTest({ candidateId, testToken, onComplete }: ZavicT
     <div className="w-full max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-800">Test ZAVIC</h2>
-        <p className="text-gray-600">
-          Test de Valores e Intereses - Pregunta {currentQuestion + 1} de {questions.length}
-        </p>
+        <div className="flex justify-between items-center">
+          <p className="text-gray-600">
+            Test de Valores e Intereses - Pregunta {currentQuestion + 1} de {questions.length}
+          </p>
+          {Object.keys(answers).length > 0 && (
+            <span className="text-xs text-green-600 flex items-center">
+              <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              Guardado automáticamente
+            </span>
+          )}
+        </div>
         <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
           <div
             className="bg-blue-500 h-2 rounded-full transition-all duration-300"

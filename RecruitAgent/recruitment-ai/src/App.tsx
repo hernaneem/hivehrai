@@ -22,6 +22,7 @@ import RavenTestCompleted from './components/RavenTestCompleted'
 import ZavicTestPage from './components/ZavicTestPage'
 import ZavicTestCompleted from './components/ZavicTestCompleted'
 import { RavenProvider } from './contexts/RavenContext'
+import { ZavicProvider } from './contexts/ZavicContext'
 
 function App() {
   const { user, loading } = useAuth()
@@ -42,7 +43,8 @@ function App() {
       <RavenProvider>
       <CleaverProvider>
         <MossProvider>
-          <TermanMerrillProvider>
+          <ZavicProvider>
+            <TermanMerrillProvider>
             <Routes>
               {/* Rutas públicas para tests de candidatos */}
               <Route path="/cleaver-test/:token" element={<CleaverTestPage />} />
@@ -59,12 +61,12 @@ function App() {
               <Route path="/terman-test/:token/start" element={<TermanTestInterface />} />
               <Route path="/terman-test/:token/completed" element={<TermanTestCompleted />} />
               
-              /* Rutas públicas para tests Zavic */
+              {/* Rutas públicas para tests Zavic */}
               <Route path="/zavic-test/:token" element={<ZavicTestPage />} />
               <Route path="/zavic-test/:token/start" element={<ZavicTestPage />} />
               <Route path="/zavic-test/:token/completed" element={<ZavicTestCompleted />} />
               
-              /* Rutas públicas para tests Raven */
+              {/* Rutas públicas para tests Raven */}
               <Route path="/raven-test/:token" element={<RavenTestPage />} />
               <Route path="/raven-test/:token/start" element={<RavenTestInterface />} />
               <Route path="/raven-test/:token/finish" element={<RavenTestFinishPage />} />
@@ -82,6 +84,7 @@ function App() {
               } />
             </Routes>
           </TermanMerrillProvider>
+          </ZavicProvider>
         </MossProvider>
       </CleaverProvider>
       </RavenProvider>

@@ -34,11 +34,6 @@ interface Candidate {
   raven_invitation_sent: boolean;
   raven_test_id?: string;
   raven_test_token?: string;
-  /* Zavic */
-  zavic_status: 'not-started' | 'pending' | 'in-progress' | 'completed' | 'expired';
-  zavic_invitation_sent: boolean;
-  zavic_test_id?: string;
-  zavic_test_token?: string;
 }
 
 // Lightweight shape for results fetched from terman_results table
@@ -57,6 +52,8 @@ interface TermanResult {
     generalAssessment: string;
   };
 }
+
+
 
 const PsychometricTests: React.FC = () => {
   const { user } = useAuth();
@@ -181,6 +178,8 @@ const zavicTest = zavicTestsData?.find(t => t.candidate_id === candidate.id);
     }
   };
 
+
+
   const createTermanTest = async (candidateId: string, jobId: string) => {
     if (!user?.id) throw new Error('Usuario no autenticado');
 
@@ -263,63 +262,6 @@ const zavicTest = zavicTestsData?.find(t => t.candidate_id === candidate.id);
     const candidate = candidates.find(c => c.id === candidateId);
     if (candidate?.raven_test_token) {
       return `${window.location.origin}/raven-test/${candidate.raven_test_token}`;
-    }
-    return '';
-  };
-
-  // ----------------------- ZAVIC -----------------------
-
-  const createZavicTest = async (candidateId: string, jobId: string) => {
-    if (!user?.id) throw new Error('Usuario no autenticado');
-    try {
-      const token = btoa(`zavic_${candidateId}_${Date.now()}_${Math.random()}`);
-      const { data: testData, error: testError } = await supabase
-        .from('zavic_tests')
-        .insert({
-          candidate_id: candidateId,
-          job_id: jobId,
-          recruiter_id: user.id,
-          test_token: token,
-          status: 'not-started',
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 días
-          invitation_email_sent: false,
-        })
-        .select()
-        .single();
-      if (testError) throw testError;
-      await loadCandidates();
-      return testData;
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  const sendZavicInvitation = async (candidateId: string) => {
-    try {
-      const candidate = candidates.find(c => c.id === candidateId);
-      if (!candidate?.job_id) {
-        alert('Error: No se puede enviar invitación, falta información del trabajo');
-        return;
-      }
-      const createdTest = await createZavicTest(candidateId, candidate.job_id);
-      const updatedCandidate = {
-        ...candidate,
-        zavic_status: 'not-started' as const,
-        zavic_invitation_sent: true,
-        zavic_test_id: createdTest.id,
-        zavic_test_token: createdTest.test_token,
-      } as Candidate;
-      setCandidates(prev => prev.map(c => c.id === candidateId ? updatedCandidate : c));
-      alert('✅ Test Zavic creado. Usa "Copiar Zavic" para compartir.');
-    } catch (error) {
-      alert(`Error enviando invitación Zavic: ${error instanceof Error ? error.message : 'Error desconocido'}`);
-    }
-  };
-
-  const generateZavicLink = (candidateId: string) => {
-    const candidate = candidates.find(c => c.id === candidateId);
-    if (candidate?.zavic_test_token) {
-      return `${window.location.origin}/zavic-test/${candidate.zavic_test_token}`;
     }
     return '';
   };
@@ -460,66 +402,18 @@ const zavicTest = zavicTestsData?.find(t => t.candidate_id === candidate.id);
 
   return (
     <div className="space-y-6">
-
-      {/* Filtros y búsqueda */}
+      {/* Búsqueda */}
       <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-          {/* Búsqueda */}
-          <div className="relative flex-1 max-w-md">
-            <input
-              type="text"
-              placeholder="Buscar por nombre o email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-            <div className="absolute inset-y-0 left-0 flex items-center pl-3">
-              <Search className="h-5 w-5 text-white/50" />
-            </div>
-          </div>
-
-          {/* Filtros */}
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-4 py-2 rounded-lg transition-all ${
-                filter === 'all' 
-                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' 
-                  : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
-              }`}
-            >
-              Todos
-            </button>
-            <button
-              onClick={() => setFilter('cv-approved')}
-              className={`px-4 py-2 rounded-lg transition-all ${
-                filter === 'cv-approved' 
-                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' 
-                  : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
-              }`}
-            >
-              CV Viable
-            </button>
-            <button
-              onClick={() => setFilter('test-pending')}
-              className={`px-4 py-2 rounded-lg transition-all ${
-                filter === 'test-pending' 
-                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' 
-                  : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
-              }`}
-            >
-              Test Pendiente
-            </button>
-            <button
-              onClick={() => setFilter('test-completed')}
-              className={`px-4 py-2 rounded-lg transition-all ${
-                filter === 'test-completed' 
-                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white' 
-                  : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'
-              }`}
-            >
-              Test Completado
-            </button>
+        <div className="relative max-w-md">
+          <input
+            type="text"
+            placeholder="Buscar por nombre o email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+          <div className="absolute inset-y-0 left-0 flex items-center pl-3">
+            <Search className="h-5 w-5 text-white/50" />
           </div>
         </div>
       </div>
@@ -543,10 +437,6 @@ const zavicTest = zavicTestsData?.find(t => t.candidate_id === candidate.id);
                   Test Terman
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
-                  Test Zavic
-                </th>
-
-                <th className="px-6 py-4 text-left text-xs font-medium text-white/70 uppercase tracking-wider">
                   Acciones
                 </th>
               </tr>
@@ -569,46 +459,9 @@ const zavicTest = zavicTestsData?.find(t => t.candidate_id === candidate.id);
                   <td className="px-6 py-4 whitespace-nowrap">
                     {getStatusBadge(candidate.terman_status)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {getStatusBadge(candidate.zavic_status)}
-                  </td>
 
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex space-x-3">
-                      {/* --- Zavic buttons --- */}
-
-                      {(candidate.cv_status === 'approved' || candidate.cv_status === 'reviewing') && !candidate.zavic_test_token && (
-                        <button
-                          onClick={() => sendZavicInvitation(candidate.id)}
-                          className="text-blue-400 hover:text-blue-300 flex items-center space-x-1 transition-colors"
-                        >
-                          <Send className="h-4 w-4" />
-                          <span>Crear Zavic</span>
-                        </button>
-                      )}
-
-                      {(candidate.zavic_test_token && candidate.zavic_status !== 'completed') && (
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(generateZavicLink(candidate.id));
-                            alert('📋 Enlace Zavic copiado');
-                          }}
-                          className="text-purple-400 hover:text-purple-300 flex items-center space-x-1 transition-colors"
-                        >
-                          <Copy className="h-4 w-4" />
-                          <span>Copiar Zavic</span>
-                        </button>
-                      )}
-
-                      {candidate.zavic_status === 'pending' && (
-                        <span className="text-yellow-400 flex items-center space-x-1">
-                          <AlertCircle className="h-4 w-4" />
-                          <span>Zavic pendiente</span>
-                        </span>
-                      )}
-
-                      {/* end buttons */}
-
                       {(candidate.cv_status === 'approved' || candidate.cv_status === 'reviewing') && !candidate.test_token && (
                         <button
                           onClick={() => sendTermanInvitation(candidate.id)}

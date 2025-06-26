@@ -205,36 +205,18 @@ const RavenTests: React.FC = () => {
   /* -------------------------------- RENDER -------------------------------- */
   return (
     <div className="space-y-6">
-      {/* Filtros */}
+      {/* Búsqueda */}
       <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
-        <div className="flex flex-col md:flex-row md:items-center md:space-x-4 space-y-4 md:space-y-0">
-          <div className="flex items-center flex-1 bg-white/5 px-3 py-2 rounded-lg">
-            <Search className="h-4 w-4 text-white/50 mr-2" />
-            <input
-              type="text"
-              placeholder="Buscar candidato..."
-              className="bg-transparent focus:outline-none text-white placeholder-white/50 flex-1 text-sm"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-            />
-          </div>
-          <div className="flex items-center space-x-2 text-sm">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-4 py-2 rounded-lg transition-all ${filter === 'all' ? 'bg-purple-500 text-white' : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'}`}
-            >Todos</button>
-            <button
-              onClick={() => setFilter('cv-approved')}
-              className={`px-4 py-2 rounded-lg transition-all ${filter === 'cv-approved' ? 'bg-purple-500 text-white' : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'}`}
-            >CV Viable</button>
-            <button
-              onClick={() => setFilter('test-pending')}
-              className={`px-4 py-2 rounded-lg transition-all ${filter === 'test-pending' ? 'bg-purple-500 text-white' : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'}`}
-            >Test Pendiente</button>
-            <button
-              onClick={() => setFilter('test-completed')}
-              className={`px-4 py-2 rounded-lg transition-all ${filter === 'test-completed' ? 'bg-purple-500 text-white' : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'}`}
-            >Test Completado</button>
+        <div className="relative max-w-md">
+          <input
+            type="text"
+            placeholder="Buscar por nombre o email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+          <div className="absolute inset-y-0 left-0 flex items-center pl-3">
+            <Search className="h-5 w-5 text-white/50" />
           </div>
         </div>
       </div>
