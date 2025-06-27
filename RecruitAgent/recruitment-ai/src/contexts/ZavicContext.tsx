@@ -60,9 +60,9 @@ export interface ZavicTest {
 
 export interface CandidateWithZavicInfo extends ZavicCandidate {
   zavic_status: 'not-started' | 'pending' | 'in-progress' | 'completed' | 'expired';
-  zavic_invitation_sent: boolean;
-  zavic_test_id?: number;
-  zavic_test_token?: string;
+  invitation_sent: boolean;
+  test_id?: number;
+  test_token?: string;
   zavic_results?: {
     completed_at: string;
     total_score: number;
@@ -178,9 +178,9 @@ export const ZavicProvider: React.FC<ProviderProps> = ({ children }) => {
           years_experience: cand.years_experience,
           created_at: cand.created_at,
           zavic_status: test?.status || 'not-started',
-          zavic_invitation_sent: !!test?.invitation_email_sent,
-          zavic_test_id: test?.id,
-          zavic_test_token: test?.test_token,
+          invitation_sent: !!test?.invitation_email_sent,
+          test_id: test?.id,
+          test_token: test?.test_token,
           zavic_results: test?.status === 'completed' && test.total_score
             ? {
                 completed_at: test.completed_at || '',
